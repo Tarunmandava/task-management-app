@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Task Management</title>
+    <link rel="stylesheet" href="/static/css/bootstrap.min.css">
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding-top: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            max-width: 1200px;
+            flex-grow: 1;
+        }
+        .board-card {
+            margin-bottom: 20px;
+            transition: transform 0.2s;
+        }
+        .board-card:hover {
+            transform: translateY(-5px);
+        }
+        .board-creator {
+            display: inline-block;
+            background-color: #e9ecef;
+            color: #495057;
+            padding: 2px 8px;
+            border-radius: 15px;
+            font-size: 0.8em;
+            margin-top: 5px;
+        }
+        .owner-badge {
+            background-color: #cfe2ff;
+            color: #0d6efd;
+        }
+        .action-btn {
+            margin-left: 5px;
+        }
+        .error-message {
+            display: none;
+            color: red;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>Task Management Dashboard</h1>
+            <div>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createBoardModal">
+                    Create New Board
+                </button>
+                <button id="logout-btn" class="btn btn-outline-danger ms-2">Logout</button>
+            </div>
+        </div>
+        
+        <!-- Task Boards -->
+        <div class="row" id="boards-container">
+            {% if boards %}
+                {% for board in boards %}
+                <div class="col-md-4">
+                    <div class="card board-card">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ board.name }}</h5>
+                            <p class="card-text text-muted">
+                                Created: {{ board.created_at.strftime('%Y-%m-%d') }}
+                            </p>
+                            {% if board.is_creator %}
+                                <div class="board-creator owner-badge">Owner</div>
+                            {% else %}
+                                <div class="board-creator">Member</div>
+                            {% endif %}
+                            <div class="mt-3">
+                                <a href="/board/{{ board.id }}" class="btn btn-outline-primary">Open Board</a>
+                                {% if board.is_creator %}
+                                    <button class="btn btn-outline-secondary action-btn" data-bs-toggle="modal" data-bs-target="#renameBoardModal" data-board-id="{{ board.id }}" data-board-name="{{ board.name }}">Rename</button>
+                                    <button class="btn btn-outline-warning action-btn" data-bs-toggle="modal" data-bs-target="#manageUsersModal" data-board-id="{{ board.id }}">Manage Users</button>
+                                    <button class="btn btn-outline-danger action-btn" data-bs-toggle="modal" data-bs-target="#deleteBoardModal" data-board-id="{{ board.id }}">Delete</button>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="col-12">
+                    <div class="alert alert-info" role="alert">
+                        You don't have any task boards yet. Create your first board to get started!
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Create Board Modal -->
+    <div class="modal fade" id="createBoardModal" tabindex="-1" aria-labelledby="createBoardModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createBoardModalLabel">Create New Board</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="board-name" class="form-label">Board Name</label>
+                        <input type="text" class="form-control" id="board-name" placeholder="Enter board name">
+                        <div class="invalid-feedback" id="create-board-error">Board name is required.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="create-board-btn">Create Board</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Board Modal -->
+    <div class="modal fade" id="renameBoardModal" tabindex="-1" aria-labelledby="renameBoardModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="renameBoardModalLabel">Rename Board</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="rename-board-name" class="form-label">New Board Name</label>
+                        <input type="text" class="form-control" id="rename-board-name" placeholder="Enter new board name">
+                        <div class="invalid-feedback" id="rename-board-error">Board name is required.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="rename-board-btn">Rename Board</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Users Modal -->
+    <div class="modal fade" id="manageUsersModal" tabindex="-1" aria-labelledby="manageUsersModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="manageUsersModalLabel">Manage Board Users</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="add-user-email" class="form-label">Add User by Email</label>
+                        <input type="email" class="form-control" id="add-user-email" placeholder="Enter user email">
+                        <div class="invalid-feedback" id="add-user-error">Valid email is required.</div>
+                        <button class="btn btn-primary mt-2" id="add-user-btn">Add User</button>
+                    </div>
+                    <hr>
+                    <h6>Current Members</h6>
+                    <ul class="list-group" id="members-list">
+                        <!-- Populated dynamically -->
+                    </ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Board Modal -->
+    <div class="modal fade" id="deleteBoardModal" tabindex="-1" aria-labelledby="deleteBoardModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteBoardModalLabel">Delete Board</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete this board? This action cannot be undone.</p>
+                    <div class="error-message" id="delete-board-error"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="delete-board-btn">Delete Board</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Scripts -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script>
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCgIFSECegcOUC-5nLn_lnZbqh-S-HiG8w",
+            authDomain: "task-management-app-23a02.firebaseapp.com",
+            projectId: "task-management-app-23a02",
+            storageBucket: "task-management-app-23a02.firebasestorage.app",
+            messagingSenderId: "625699587577",
+            appId: "1:625699587577:web:e585bae4f58a90b8c36928",
+            measurementId: "G-9LTSBX04YJ"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        
+        // Check authentication state
+        firebase.auth().onAuthStateChanged(function(user) {
+            if (!user) {
+                window.location.href = '/';
+            }
+        });
+
+        // Logout button handler
+        document.getElementById('logout-btn').addEventListener('click', function() {
+            firebase.auth().signOut().then(function() {
+                document.cookie = `user_id=; expires=${new Date(0).toUTCString()}; path=/;`;
+                document.cookie = `email=; expires=${new Date(0).toUTCString()}; path=/;`;
+                document.cookie = `name=; expires=${new Date(0).toUTCString()}; path=/;`;
+                window.location.href = '/';
+            }).catch(function(error) {
+                console.error("Error signing out:", error);
+                alert('Failed to sign out. Please try again.');
+            });
+        });
+
+        // Create Board
+        document.getElementById('create-board-btn').addEventListener('click', function() {
+            const boardName = document.getElementById('board-name').value.trim();
+            const errorElement = document.getElementById('create-board-error');
+            
+            if (!boardName) {
+                document.getElementById('board-name').classList.add('is-invalid');
+                errorElement.style.display = 'block';
+                return;
+            }
+            
+            document.getElementById('board-name').classList.remove('is-invalid');
+            errorElement.style.display = 'none';
+            
+            fetch('/create-board', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ board_name: boardName })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(data => { throw new Error(data.detail || 'Error creating board'); });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('createBoardModal')).hide();
+                    window.location.reload();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                errorElement.textContent = error.message;
+                errorElement.style.display = 'block';
+            });
+        });
+
+        // Rename Board
+        document.getElementById('rename-board-btn').addEventListener('click', function() {
+            const boardId = document.getElementById('rename-board-btn').dataset.boardId;
+            const newName = document.getElementById('rename-board-name').value.trim();
+            const errorElement = document.getElementById('rename-board-error');
+            
+            if (!newName) {
+                document.getElementById('rename-board-name').classList.add('is-invalid');
+                errorElement.style.display = 'block';
+                return;
+            }
+            
+            document.getElementById('rename-board-name').classList.remove('is-invalid');
+            errorElement.style.display = 'none';
+            
+            fetch('/rename-board', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ board_id: boardId, name: newName })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(data => { throw new Error(data.detail || 'Error renaming board'); });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('renameBoardModal')).hide();
+                    window.location.reload();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                errorElement.textContent = error.message;
+                errorElement.style.display = 'block';
+            });
+        });
+
+        // Populate Rename Modal
+        document.querySelectorAll('[data-bs-target="#renameBoardModal"]').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const boardId = this.dataset.boardId;
+                const boardName = this.dataset.boardName;
+                document.getElementById('rename-board-name').value = boardName;
+                document.getElementById('rename-board-btn').dataset.boardId = boardId;
+                document.getElementById('rename-board-error').style.display = 'none';
+            });
+        });
+
+        // Manage Users
+        document.querySelectorAll('[data-bs-target="#manageUsersModal"]').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                const boardId = this.dataset.boardId;
+                document.getElementById('add-user-btn').dataset.boardId = boardId;
+                document.getElementById('add-user-error').style.display = 'none';
+                
+                // Fetch current members
+                try {
+                    const response = await fetch(`/board/${boardId}/members`, { 
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch board members');
+                    }
+                    const data = await response.json();
+                    if (!data.success) {
+                        throw new Error(data.error || 'Error fetching members');
+                    }
+                    
+                    const membersList = document.getElementById('members-list');
+                    membersList.innerHTML = '';
+                    data.members.forEach(member => {
+                        const li = document.createElement('li');
+                        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                        li.innerHTML = `
+                            ${member.name || member.email} ${member.is_creator ? '<span class="badge bg-primary ms-2">Creator</span>' : ''}
+                            ${member.is_creator ? '' : `<button class="btn btn-sm btn-danger remove-user-btn" data-user-id="${member.id}">Remove</button>`}
+                        `;
+                        membersList.appendChild(li);
+                    });
+                } catch (error) {
+                    console.error('Error fetching members:', error);
+                    document.getElementById('add-user-error').textContent = error.message;
+                    document.getElementById('add-user-error').style.display = 'block';
+                }
+            });
+        });
+
+        // Add User
+        document.getElementById('add-user-btn').addEventListener('click', function() {
+            const boardId = this.dataset.boardId;
+            const email = document.getElementById('add-user-email').value.trim();
+            const errorElement = document.getElementById('add-user-error');
+            
+            if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                document.getElementById('add-user-email').classList.add('is-invalid');
+                errorElement.textContent = 'Valid email is required.';
+                errorElement.style.display = 'block';
+                return;
+            }
+            
+            document.getElementById('add-user-email').classList.remove('is-invalid');
+            errorElement.style.display = 'none';
+            
+            fetch('/add-member', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ board_id: boardId, email: email })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(data => { throw new Error(data.detail || 'Error adding user'); });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('add-user-email').value = '';
+                    // Trigger re-fetch of members
+                    document.querySelector(`button[data-board-id="${boardId}"]`).click();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                errorElement.textContent = error.message;
+                errorElement.style.display = 'block';
+            });
+        });
+
+        // Remove User (delegated event)
+        document.getElementById('members-list').addEventListener('click', function(e) {
+            if (e.target.classList.contains('remove-user-btn')) {
+                const boardId = document.getElementById('add-user-btn').dataset.boardId;
+                const userId = e.target.dataset.userId;
+                
+                fetch('/remove-member', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ board_id: boardId, member_id: userId })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => { throw new Error(data.detail || 'Error removing user'); });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        // Trigger re-fetch of members
+                        document.querySelector(`button[data-board-id="${boardId}"]`).click();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('add-user-error').textContent = error.message;
+                    document.getElementById('add-user-error').style.display = 'block';
+                });
+            }
+        });
+
+        // Delete Board
+        document.getElementById('delete-board-btn').addEventListener('click', function() {
+            const boardId = document.getElementById('delete-board-btn').dataset.boardId;
+            const errorElement = document.getElementById('delete-board-error');
+            
+            fetch('/delete-board', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ board_id: boardId })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(data => { throw new Error(data.detail || 'Error deleting board'); });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('deleteBoardModal')).hide();
+                    window.location.reload();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                errorElement.textContent = error.message;
+                errorElement.style.display = 'block';
+            });
+        });
+
+        // Populate Delete Modal
+        document.querySelectorAll('[data-bs-target="#deleteBoardModal"]').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const boardId = this.dataset.boardId;
+                document.getElementById('delete-board-btn').dataset.boardId = boardId;
+                document.getElementById('delete-board-error').style.display = 'none';
+            });
+        });
+    </script>
+</body>
+</html>

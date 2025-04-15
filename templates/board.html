@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ board.name }} - Task Management</title>
+    <link rel="stylesheet" href="/static/css/bootstrap.min.css">
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding-top: 20px;
+        }
+        .task-card {
+            margin-bottom: 15px;
+            border-left: 5px solid #6c757d;
+            transition: all 0.2s;
+        }
+        .task-card.completed {
+            border-left-color: #198754;
+            background-color: #f0fff0;
+        }
+        .task-card.unassigned {
+            border-left-color: #dc3545;
+            background-color: #fff5f5;
+        }
+        .task-actions {
+            display: flex;
+            gap: 5px;
+        }
+        .board-stats {
+            background-color: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-around;
+        }
+        .stat-item {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #0d6efd;
+        }
+        .stat-label {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+        .member-tag {
+            background-color: #e9ecef;
+            color: #495057;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            margin: 2px;
+            display: inline-block;
+        }
+        .assigned-user {
+            background-color: #e0f7fa;
+            color: #007bff;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            margin: 2px;
+        }
+        .due-date {
+            color: #6c757d;
+            font-size: 0.85rem;
+        }
+        .due-date.overdue {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .completion-date {
+            color: #198754;
+            font-size: 0.85rem;
+        }
+        .error-message {
+            display: none;
+            color: #dc3545;
+            font-size: 0.85rem;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <a href="/dashboard" class="btn btn-outline-secondary me-2">Back to Dashboard</a>
+                <h1 id="board-title" data-board-id="{{ board.id }}">{{ board.name }}</h1>
+            </div>
+            <div>
+                {% if is_creator %}
+                <button class="btn btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#manageMembersModal">
+                    Manage Members
+                </button>
+                <button class="btn btn-outline-secondary me-2" data-bs-toggle="modal" data-bs-target="#renameBoardModal">
+                    Rename Board
+                </button>
+                <button class="btn btn-outline-danger me-2" data-bs-toggle="modal" data-bs-target="#deleteBoardModal">
+                    Delete Board
+                </button>
+                {% endif %}
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTaskModal">
+                    Add Task
+                </button>
+            </div>
+        </div>
+
+        <!-- Board Stats -->
+        <div class="board-stats">
+            <div class="stat-item">
+                <div class="stat-value">{{ stats.total }}</div>
+                <div class="stat-label">Total Tasks</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">{{ stats.active }}</div>
+                <div class="stat-label">Active Tasks</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">{{ stats.completed }}</div>
+                <div class="stat-label">Completed Tasks</div>
+            </div>
+        </div>
+
+        <!-- Tasks List -->
+        <div id="tasks-container">
+            {% if tasks %}
+                {% for task in tasks %}
+                <div class="card task-card {% if task.completed %}completed{% endif %} {% if task.unassigned %}unassigned{% endif %}" 
+                     id="task-{{ task.id }}" data-task-id="{{ task.id }}">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <div class="form-check">
+                                    <input class="form-check-input task-checkbox" type="checkbox" 
+                                           id="check-{{ task.id }}" {% if task.completed %}checked{% endif %} 
+                                           data-task-id="{{ task.id }}">
+                                    <label class="form-check-label h5" for="check-{{ task.id }}">
+                                        {{ task.title }}
+                                    </label>
+                                </div>
+                                <div class="mt-2">
+                                    {% if task.due_date %}
+                                    <span class="due-date {% if not task.completed and task.due_date.date() < now_date.date() %}overdue{% endif %}">
+                                        Due: {{ task.due_date.strftime('%Y-%m-%d') }}
+                                    </span>
+                                    {% endif %}
+                                    {% if task.completed and task.completed_at %}
+                                    <span class="completion-date ms-3">
+                                        Completed: {{ task.completed_at.strftime('%Y-%m-%d %H:%M') }}
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                <div class="mt-2">
+                                    {% if task.unassigned %}
+                                    <span class="text-danger">Unassigned</span>
+                                    {% else %}
+                                        {% for user_id in task.assigned_to %}
+                                        <span class="assigned-user">
+                                            {{ users_dict.get(user_id, {}).get('name', user_id) }}
+                                        </span>
+                                        {% endfor %}
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="task-actions">
+                                <button class="btn btn-sm btn-outline-primary edit-task-btn" 
+                                        data-task-id="{{ task.id }}"
+                                        data-task-title="{{ task.title }}"
+                                        data-task-due="{% if task.due_date %}{{ task.due_date.strftime('%Y-%m-%d') }}{% endif %}"
+                                        data-task-assigned="{{ task.assigned_to | tojson }}">
+                                    Edit
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger delete-task-btn" 
+                                        data-task-id="{{ task.id }}">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="alert alert-info" role="alert">
+                    No tasks available. Create your first task!
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Add Task Modal -->
+    <div class="modal fade" id="addTaskModal" tabindex="-1" aria-labelledby="addTaskModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addTaskModalLabel">Add New Task</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="task-title" class="form-label">Task Title</label>
+                        <input type="text" class="form-control" id="task-title" placeholder="Enter task title">
+                        <div class="error-message" id="task-title-error">Task title is required.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="task-due-date" class="form-label">Due Date (optional)</label>
+                        <input type="date" class="form-control" id="task-due-date">
+                    </div>
+                    <div class="mb-3">
+                        <label for="task-assigned" class="form-label">Assign To (optional)</label>
+                        <select class="form-select" id="task-assigned" multiple>
+                            <option value="{{ board.creator_id }}">{{ creator_name }} (Creator)</option>
+                            {% for member in members %}
+                            <option value="{{ member.id }}">{{ member.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="save-task-btn">Add Task</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Task Modal -->
+    <div class="modal fade" id="editTaskModal" tabindex="-1" aria-labelledby="editTaskModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editTaskModalLabel">Edit Task</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="edit-task-id">
+                    <div class="mb-3">
+                        <label for="edit-task-title" class="form-label">Task Title</label>
+                        <input type="text" class="form-control" id="edit-task-title" placeholder="Enter task title">
+                        <div class="error-message" id="edit-task-title-error">Task title is required.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit-task-due-date" class="form-label">Due Date (optional)</label>
+                        <input type="date" class="form-control" id="edit-task-due-date">
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit-task-assigned" class="form-label">Assign To (optional)</label>
+                        <select class="form-select" id="edit-task-assigned" multiple>
+                            <option value="{{ board.creator_id }}">{{ creator_name }} (Creator)</option>
+                            {% for member in members %}
+                            <option value="{{ member.id }}">{{ member.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="update-task-btn">Update Task</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Members Modal -->
+    <div class="modal fade" id="manageMembersModal" tabindex="-1" aria-labelledby="manageMembersModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="manageMembersModalLabel">Manage Board Members</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="add-member-email" class="form-label">Add Member by Email</label>
+                        <div class="input-group">
+                            <input type="email" class="form-control" id="add-member-email" placeholder="Enter email address">
+                            <button class="btn btn-outline-primary" type="button" id="add-member-btn">Add</button>
+                        </div>
+                        <div class="error-message" id="add-member-error"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Current Members</label>
+                        <div class="border rounded p-2">
+                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                <span class="member-tag">{{ creator_name }} (Creator)</span>
+                                <span></span>
+                            </div>
+                            {% for member in members %}
+                            <div class="d-flex align-items-center justify-content-between mb-2" id="member-{{ member.id }}">
+                                <span class="member-tag">{{ member.name }}</span>
+                                <button class="btn btn-sm btn-outline-danger remove-member-btn" data-member-id="{{ member.id }}">
+                                    Remove
+                                </button>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Board Modal -->
+    <div class="modal fade" id="renameBoardModal" tabindex="-1" aria-labelledby="renameBoardModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="renameBoardModalLabel">Rename Board</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="board-name" class="form-label">Board Name</label>
+                        <input type="text" class="form-control" id="board-name" value="{{ board.name }}">
+                        <div class="error-message" id="rename-board-error">Board name is required.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="rename-board-btn">Rename</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Board Modal -->
+    <div class="modal fade" id="deleteBoardModal" tabindex="-1" aria-labelledby="deleteBoardModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteBoardModalLabel">Delete Board</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete this board? This action cannot be undone.</p>
+                    <div class="error-message" id="delete-board-error"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirm-delete-board-btn">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const boardId = document.getElementById('board-title').dataset.boardId;
+
+            // Task Checkbox Handler
+            document.querySelectorAll('.task-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('change', function() {
+                    const taskId = this.dataset.taskId;
+                    const completed = this.checked;
+                    
+                    fetch('/complete-task', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ board_id: boardId, task_id: taskId, completed: completed })
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            return response.json().then(data => { throw new Error(data.detail || 'Failed to update task'); });
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.success) {
+                            window.location.reload(); // Refresh to update completion date and stats
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert(error.message);
+                        this.checked = !completed; // Revert checkbox
+                    });
+                });
+            });
+
+            // Add Task
+            document.getElementById('save-task-btn').addEventListener('click', function() {
+                const title = document.getElementById('task-title').value.trim();
+                const dueDate = document.getElementById('task-due-date').value;
+                const assignedTo = Array.from(document.getElementById('task-assigned').selectedOptions)
+                    .map(option => option.value);
+                const errorElement = document.getElementById('task-title-error');
+                
+                if (!title) {
+                    document.getElementById('task-title').classList.add('is-invalid');
+                    errorElement.textContent = 'Task title is required.';
+                    errorElement.style.display = 'block';
+                    return;
+                }
+                
+                document.getElementById('task-title').classList.remove('is-invalid');
+                errorElement.style.display = 'none';
+                
+                fetch('/add-task', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ board_id: boardId, title, due_date: dueDate || null, assigned_to: assignedTo })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => { throw new Error(data.detail || 'Failed to add task'); });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        bootstrap.Modal.getInstance(document.getElementById('addTaskModal')).hide();
+                        window.location.reload();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    errorElement.textContent = error.message;
+                    errorElement.style.display = 'block';
+                });
+            });
+
+            // Edit Task Button
+            document.querySelectorAll('.edit-task-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const taskId = this.dataset.taskId;
+                    const title = this.dataset.taskTitle;
+                    const dueDate = this.dataset.taskDue;
+                    const assignedTo = JSON.parse(this.dataset.taskAssigned || '[]');
+                    
+                    document.getElementById('edit-task-id').value = taskId;
+                    document.getElementById('edit-task-title').value = title;
+                    document.getElementById('edit-task-due-date').value = dueDate || '';
+                    
+                    const selectElement = document.getElementById('edit-task-assigned');
+                    Array.from(selectElement.options).forEach(option => {
+                        option.selected = assignedTo.includes(option.value);
+                    });
+                    
+                    document.getElementById('edit-task-title-error').style.display = 'none';
+                    bootstrap.Modal.getInstance(document.getElementById('editTaskModal'))?.hide();
+                    new bootstrap.Modal(document.getElementById('editTaskModal')).show();
+                });
+            });
+
+            // Update Task
+            document.getElementById('update-task-btn').addEventListener('click', function() {
+                const taskId = document.getElementById('edit-task-id').value;
+                const title = document.getElementById('edit-task-title').value.trim();
+                const dueDate = document.getElementById('edit-task-due-date').value;
+                const assignedTo = Array.from(document.getElementById('edit-task-assigned').selectedOptions)
+                    .map(option => option.value);
+                const errorElement = document.getElementById('edit-task-title-error');
+                
+                if (!title) {
+                    document.getElementById('edit-task-title').classList.add('is-invalid');
+                    errorElement.textContent = 'Task title is required.';
+                    errorElement.style.display = 'block';
+                    return;
+                }
+                
+                document.getElementById('edit-task-title').classList.remove('is-invalid');
+                errorElement.style.display = 'none';
+                
+                fetch('/update-task', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ board_id: boardId, task_id: taskId, title, due_date: dueDate || null, assigned_to: assignedTo })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => { throw new Error(data.detail || 'Failed to update task'); });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        bootstrap.Modal.getInstance(document.getElementById('editTaskModal')).hide();
+                        window.location.reload();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    errorElement.textContent = error.message;
+                    errorElement.style.display = 'block';
+                });
+            });
+
+            // Delete Task
+            document.querySelectorAll('.delete-task-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const taskId = this.dataset.taskId;
+                    
+                    fetch('/delete-task', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ board_id: boardId, task_id: taskId })
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            return response.json().then(data => { throw new Error(data.detail || 'Failed to delete task'); });
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.success) {
+                            document.getElementById(`task-${taskId}`).remove();
+                            window.location.reload(); // Update stats
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert(error.message);
+                    });
+                });
+            });
+
+            // Rename Board
+            document.getElementById('rename-board-btn').addEventListener('click', function() {
+                const name = document.getElementById('board-name').value.trim();
+                const errorElement = document.getElementById('rename-board-error');
+                
+                if (!name) {
+                    document.getElementById('board-name').classList.add('is-invalid');
+                    errorElement.textContent = 'Board name is required.';
+                    errorElement.style.display = 'block';
+                    return;
+                }
+                
+                document.getElementById('board-name').classList.remove('is-invalid');
+                errorElement.style.display = 'none';
+                
+                fetch('/rename-board', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ board_id: boardId, name })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => { throw new Error(data.detail || 'Failed to rename board'); });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        bootstrap.Modal.getInstance(document.getElementById('renameBoardModal')).hide();
+                        document.getElementById('board-title').textContent = name;
+                        document.title = `${name} - Task Management`;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    errorElement.textContent = error.message;
+                    errorElement.style.display = 'block';
+                });
+            });
+
+            // Add Member
+            document.getElementById('add-member-btn').addEventListener('click', function() {
+                const email = document.getElementById('add-member-email').value.trim();
+                const errorElement = document.getElementById('add-member-error');
+                
+                if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                    document.getElementById('add-member-email').classList.add('is-invalid');
+                    errorElement.textContent = 'Valid email is required.';
+                    errorElement.style.display = 'block';
+                    return;
+                }
+                
+                document.getElementById('add-member-email').classList.remove('is-invalid');
+                errorElement.style.display = 'none';
+                
+                fetch('/add-member', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ board_id: boardId, email })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => { throw new Error(data.detail || 'Failed to add member'); });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        bootstrap.Modal.getInstance(document.getElementById('manageMembersModal')).hide();
+                        window.location.reload();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    errorElement.textContent = error.message;
+                    errorElement.style.display = 'block';
+                });
+            });
+
+            // Remove Member
+            document.querySelectorAll('.remove-member-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const memberId = this.dataset.memberId;
+                    
+                    fetch('/remove-member', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ board_id: boardId, member_id: memberId })
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            return response.json().then(data => { throw new Error(data.detail || 'Failed to remove member'); });
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.success) {
+                            bootstrap.Modal.getInstance(document.getElementById('manageMembersModal')).hide();
+                            window.location.reload();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert(error.message);
+                    });
+                });
+            });
+
+            // Delete Board
+            document.getElementById('confirm-delete-board-btn').addEventListener('click', function() {
+                const errorElement = document.getElementById('delete-board-error');
+                
+                fetch('/delete-board', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ board_id: boardId })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => { throw new Error(data.detail || 'Failed to delete board'); });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        window.location.href = '/dashboard';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    errorElement.textContent = error.message;
+                    errorElement.style.display = 'block';
+                });
+            });
+        });
+    </script>
+</body>
+</html>
